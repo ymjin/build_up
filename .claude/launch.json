@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Next.js App (새 앱)",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "/Users/ymjin/Documents/antigravity/build_up/app"],
+      "port": 3000
+    },
+    {
+      "name": "Vite Frontend (기존 UI 프로토타입)",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "/Users/ymjin/Documents/antigravity/build_up/frontend"],
+      "port": 5173
+    }
+  ]
+}
