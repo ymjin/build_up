@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+@theme {
+  --font-heading: "Outfit", sans-serif;
+  --font-body: "Inter", sans-serif;
+
+  /* Orange Theme Palette */
+  --color-orange-base: #FFF7ED;
+  --color-orange-card: rgba(255, 255, 255, 0.7);
+  --color-orange-primary: #FB923C;
+  --color-orange-secondary: #EA580C;
+  --color-orange-text: #1E293B;
+
+  /* Blue Theme Palette */
+  --color-blue-base: #F8FAFC;
+  --color-blue-card: rgba(255, 255, 255, 0.6);
+  --color-blue-primary: #3B82F6;
+  --color-blue-secondary: #1D4ED8;
+  --color-blue-text: #0F172A;
+
+  /* Global BuildUp Colors */
+  --color-build-dark: #0F172A;
+  --color-build-slate: #1E293B;
+  --color-build-orange-start: #FB923C;
+  --color-build-orange-end: #EA580C;
+}
+
+@layer base {
+  body {
+    @apply antialiased transition-colors duration-500;
+    font-family: var(--font-body);
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading);
+  }
+}
+
+/* Glassmorphism Utility */
+.glass {
+  @apply backdrop-blur-xl border border-white/20;
+}
