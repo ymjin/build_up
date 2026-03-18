@@ -491,25 +491,7 @@ export default function AdminSettingsPage() {
                       ) : (
                         folders.map(folder => (
                           <div key={folder.fileId} className="flex items-center gap-3 group animate-in fade-in slide-in-from-right-2 duration-300">
-                            <button
-                              onClick={() => handleFolderClick(folder)}
-                              className={`flex-1 flex items-center justify-between p-4 bg-white/30 hover:bg-white rounded-[1.5rem] border transition-all shadow-sm group-hover:shadow-md ${
-                                driveRootId === folder.fileId ? 'border-orange-primary bg-orange-50/50' : 'border-transparent hover:border-orange-100'
-                              }`}
-                            >
-                              <div className="flex items-center gap-4">
-                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${
-                                  driveRootId === folder.fileId ? 'bg-orange-primary text-white' : 'bg-orange-50 text-orange-400 group-hover:text-orange-primary'
-                                }`}>
-                                  {driveRootId === folder.fileId ? <Check size={20} /> : <Folder size={20} />}
-                                </div>
-                                <div className="flex flex-col">
-                                  <span className="text-sm font-bold text-orange-text">{folder.fileName}</span>
-                                  {driveRootId === folder.fileId && <span className="text-[9px] font-black text-orange-primary uppercase tracking-tighter">Current Upload Root</span>}
-                                </div>
-                              </div>
-                              <ChevronRight size={16} className="opacity-0 group-hover:opacity-100 transition-all text-orange-primary" />
-                            </button>
+                            {/* 폴더 클릭 → 선택 (루트 지정) */}
                             <button
                               onClick={() => {
                                 setDriveRootId(folder.fileId)
@@ -523,17 +505,33 @@ export default function AdminSettingsPage() {
                                   })
                                 }).then(res => {
                                   if (res.ok) {
-                                    setToast({ message: '기본 저장 위치로 지정되었습니다.', type: 'success' })
+                                    setToast({ message: `'${folder.fileName}' 폴더가 기본 저장 위치로 지정되었습니다.`, type: 'success' })
                                   }
                                 })
                               }}
-                              className={`h-[56px] px-6 rounded-[2rem] transition-all text-[10px] font-black uppercase tracking-widest shadow-lg ${
-                                driveRootId === folder.fileId 
-                                  ? 'bg-orange-50 text-orange-primary border border-orange-200 cursor-default' 
-                                  : 'bg-orange-text text-white opacity-0 group-hover:opacity-100 hover:bg-orange-primary hover:scale-105 active:scale-95'
+                              className={`flex-1 flex items-center justify-between p-4 rounded-[1.5rem] border transition-all shadow-sm group-hover:shadow-md ${
+                                driveRootId === folder.fileId
+                                  ? 'border-orange-primary bg-orange-50/50'
+                                  : 'bg-white/30 hover:bg-white border-transparent hover:border-orange-100'
                               }`}
                             >
-                              {driveRootId === folder.fileId ? 'Selected' : 'Set as Root'}
+                              <div className="flex items-center gap-4">
+                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${
+                                  driveRootId === folder.fileId ? 'bg-orange-primary text-white' : 'bg-orange-50 text-orange-400 group-hover:text-orange-primary'
+                                }`}>
+                                  {driveRootId === folder.fileId ? <Check size={20} /> : <Folder size={20} />}
+                                </div>
+                                <div className="flex flex-col items-start">
+                                  <span className="text-sm font-bold text-orange-text">{folder.fileName}</span>
+                                  {driveRootId === folder.fileId
+                                    ? <span className="text-[9px] font-black text-orange-primary uppercase tracking-tighter">Current Upload Root</span>
+                                    : <span className="text-[9px] font-bold text-orange-text/30 opacity-0 group-hover:opacity-100 transition-opacity">클릭하여 루트로 지정</span>
+                                  }
+                                </div>
+                              </div>
+                              {driveRootId === folder.fileId && (
+                                <span className="text-[9px] font-black text-orange-primary uppercase tracking-widest">Selected</span>
+                              )}
                             </button>
                           </div>
                         ))

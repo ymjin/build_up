@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, FolderKanban, Settings, LogOut, HardDrive } from 'lucide-react'
+import { LayoutDashboard, FolderKanban, Settings, LogOut, HardDrive, FlaskConical } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { useEffect, useState } from 'react'
@@ -44,6 +44,7 @@ export function Sidebar() {
   const navItems = [
     { href: '/dashboard', icon: LayoutDashboard, label: '대시보드' },
     { href: '/projects', icon: FolderKanban, label: '프로젝트' },
+    { href: '/rd', icon: FlaskConical, label: 'R&D 사업' },
   ]
   
   const adminItems = [

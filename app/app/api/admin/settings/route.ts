@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
 export async function GET() {
   const supabase = await createClient()
@@ -52,9 +53,14 @@ export async function POST(request: Request) {
     }
 
     if (updates.length > 0) {
-      const { error } = await supabase
+      // RLS 우회: 관리자 권한 체크는 위에서 완료했으므로 service role로 직접 write
+      const adminClient = createSupabaseClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!
+      )
+      const { error } = await adminClient
         .from('system_settings')
-        .upsert(updates)
+        .upsert(updates, { onConflict: 'key' })
 
       if (error) throw error
     }

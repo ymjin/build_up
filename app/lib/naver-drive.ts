@@ -115,62 +115,147 @@ export class NaverDriveService {
     if (!response.ok) {
       const resultText = await response.text()
       console.error(`NaverDriveService: createFolder FAILED (${response.status}) | Raw:`, resultText)
-      
+
+      // 409 이미 존재 → 기존 폴더 ID 찾아서 반환
+      if (response.status === 409) {
+        console.log(`NaverDriveService: 폴더 "${folderName}" 이미 존재 → 기존 폴더 ID 조회`)
+        const existingId = await this.findFolderByName(userId, folderName, parentId, driveType, sharedDriveId)
+        if (existingId) return existingId
+      }
+
       let errorMessage = response.statusText
       try {
         const result = JSON.parse(resultText)
         errorMessage = result.message || result.description || result.error_description || response.statusText
       } catch (e) {}
-      
+
       throw new Error(`Folder creation failed: ${errorMessage} (Status: ${response.status})`)
     }
-    
+
     const result = await response.json()
+    console.log(`NaverDriveService: createFolder SUCCESS | response:`, JSON.stringify(result))
     return result.fileId
   }
 
+  /** 부모 폴더 내에서 이름으로 폴더 ID 조회 (409 충돌 처리용)
+   *  - 1단계: parentId 직접 하위에서 탐색
+   *  - 2단계: 못 찾으면 parentId 하위 폴더들 내부(1레벨 더)까지 탐색
+   *    (저장된 rootFolderId가 Build+Up 위 레벨일 때도 커버)
+   */
+  private async findFolderByName(
+    userId: string,
+    folderName: string,
+    parentId: string,
+    driveType: DriveType,
+    sharedDriveId?: string
+  ): Promise<string | null> {
+    const driveId = sharedDriveId || 'personal'
+    try {
+      // 1단계: 직접 하위 탐색
+      const folders = await this.listFolders(userId, driveId, parentId)
+      const found = folders.find((f: any) => f.fileName === folderName || f.name === folderName)
+      if (found) {
+        console.log(`NaverDriveService: 기존 폴더 "${folderName}" 발견 (1단계) → fileId: ${found.fileId}`)
+        return found.fileId
+      }
+
+      // 2단계: 하위 폴더들 안에서도 탐색 (rootFolderId가 한 레벨 위일 경우 대비)
+      console.log(`NaverDriveService: "${folderName}" 1단계 탐색 실패 → 하위 폴더 ${folders.length}개 내부 탐색 시작`)
+      for (const subFolder of folders) {
+        const subId = subFolder.fileId || subFolder.id
+        if (!subId) continue
+        try {
+          const subFolders = await this.listFolders(userId, driveId, subId)
+          const foundInSub = subFolders.find((f: any) => f.fileName === folderName || f.name === folderName)
+          if (foundInSub) {
+            console.log(`NaverDriveService: 기존 폴더 "${folderName}" 발견 (2단계, 부모: ${subFolder.fileName}) → fileId: ${foundInSub.fileId}`)
+            return foundInSub.fileId
+          }
+        } catch {
+          // 개별 하위 폴더 조회 실패는 무시하고 다음으로
+        }
+      }
+    } catch (err) {
+      console.warn(`NaverDriveService: findFolderByName 실패:`, err)
+    }
+    return null
+  }
+
   async uploadFile(
-    userId: string, 
-    file: Buffer, 
-    fileName: string, 
+    userId: string,
+    file: Buffer,
+    fileName: string,
     parentFolderId: string,
     driveType: DriveType = 'personal',
     sharedDriveId?: string
   ): Promise<string> {
     const token = await this.getValidToken(userId)
-    const baseUrl = this.getDriveBaseUrl(driveType, sharedDriveId)
 
-    // 1. 세션 생성 (Upload Session)
-    const sessionRes = await fetch(`${baseUrl}/files/upload/session`, {
+    const baseUrl = driveType === 'personal'
+      ? `${NAVER_API_BASE}/users/me/drive`
+      : `${NAVER_API_BASE}/sharedrives/${sharedDriveId}`
+
+    const authHeaders = { 'Authorization': `Bearer ${token}` }
+
+    console.log(`NaverDriveService: uploadFile 호출 | parentFolderId: ${parentFolderId} | fileName: ${fileName} | size: ${file.length}`)
+    // ── 1단계: 업로드 URL 발급 ────────────────────────────────────
+    // 공식 API: POST /sharedrives/{sharedriveId}/files/{parentFolderId}
+    // (parentFolderId를 body가 아닌 경로(path)에 지정해야 정확한 폴더에 업로드됨)
+    const uploadMetaUrl = `${baseUrl}/files/${parentFolderId}`
+    console.log(`NaverDriveService: [1단계] uploadUrl 발급 → ${uploadMetaUrl}`)
+    const metaRes = await fetch(uploadMetaUrl, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        fileName: fileName,
-        parentFileId: parentFolderId
-      })
+      headers: { ...authHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fileName, fileSize: file.length }),
     })
+    const metaText = await metaRes.text()
+    console.log(`NaverDriveService: uploadUrl 발급 응답 (${metaRes.status}):`, metaText.substring(0, 200))
 
-    const session = await sessionRes.json()
-    if (!sessionRes.ok) throw new Error(`Upload session failed: ${session.message || sessionRes.statusText}`)
+    if (!metaRes.ok) throw new Error(`uploadUrl 발급 실패 (${metaRes.status}): ${metaText}`)
 
-    // 2. 실제 파일 바이너리 전송 (Access Token은 session endpoint와 동일하게 필요할 수 있음)
-    // Naver Works v2.0 uploadUrl은 보통 token을 요구하지 않거나 헤더로 받음
-    const uploadRes = await fetch(session.uploadUrl, {
+    const meta = JSON.parse(metaText)
+    const uploadUrl: string = meta.uploadUrl
+    if (!uploadUrl) throw new Error('uploadUrl이 응답에 없습니다')
+
+    // ── 2단계: 파일 바이너리 PUT ──────────────────────────────────
+    console.log(`NaverDriveService: [2단계] PUT → ${uploadUrl.substring(0, 80)}...`)
+    const putRes = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: { ...authHeaders, 'Content-Type': 'application/octet-stream' },
+      body: file,
+    })
+    const putText = await putRes.text()
+    console.log(`NaverDriveService: PUT 응답 (${putRes.status}):`, putText.substring(0, 300))
+
+    if (!putRes.ok) throw new Error(`파일 업로드 실패 (${putRes.status}): ${putText}`)
+
+    // PUT 응답에서 fileId 추출
+    let uploadedFileId: string | null = null
+    try {
+      const putJson = JSON.parse(putText)
+      uploadedFileId = putJson.fileId ?? null
+    } catch {}
+
+    if (!uploadedFileId) throw new Error('업로드 응답에서 fileId를 찾을 수 없습니다')
+    console.log(`NaverDriveService: 업로드 완료 fileId=${uploadedFileId}`)
+
+    // ── 3단계: 이동 확인 (업로드 경로 지정이 무시된 경우 fallback) ──
+    // POST /sharedrives/{id}/files/{fileId}/move + { toParentFileId } 공식 필드명
+    console.log(`NaverDriveService: [3단계] 이동 확인 시도 → target: ${parentFolderId}`)
+    const moveRes = await fetch(`${baseUrl}/files/${uploadedFileId}/move`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/octet-stream'
-      },
-      body: new Uint8Array(file)
+      headers: { ...authHeaders, 'Content-Type': 'application/json' },
+      // 공식 API 필드명: toParentFileId (parentFileId 아님)
+      body: JSON.stringify({ toParentFileId: parentFolderId }),
     })
+    const moveText = await moveRes.text()
+    console.log(`NaverDriveService: move 응답 (${moveRes.status}):`, moveText.substring(0, 300))
 
-    const result = await uploadRes.json()
-    if (!uploadRes.ok) throw new Error(`Upload failed: ${result.message || uploadRes.statusText}`)
+    if (!moveRes.ok) {
+      console.warn(`NaverDriveService: 이동 실패 (${moveRes.status}) - 업로드 경로 지정이 작동했을 경우 정상`)
+    }
 
-    return result.fileId
+    return uploadedFileId
   }
 
   async listSharedDrives(userId: string): Promise<any[]> {
@@ -203,30 +288,50 @@ export class NaverDriveService {
   async listFolders(userId: string, sharedDriveId: string, parentFolderId: string = 'root'): Promise<any[]> {
     console.log(`NaverDriveService: Fetching folders for drive ${sharedDriveId}, parent ${parentFolderId}`)
     const token = await this.getValidToken(userId)
-    
-    let url: string
-    if (sharedDriveId === 'personal') {
-      url = `${NAVER_API_BASE}/users/me/drive/files?parentFileId=${parentFolderId}`
-    } else {
-      url = `${NAVER_API_BASE}/sharedrives/${sharedDriveId}/files?parentFileId=${parentFolderId}`
-    }
-    
-    console.log('NaverDriveService: Fetching folders from URL:', url)
 
-    const response = await fetch(url, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-    
-    const result = await response.json()
-    
-    if (!response.ok) {
-      console.error('NaverDriveService: listFolders failed:', result)
-      throw new Error(`Folder fetch failed: ${result.message || JSON.stringify(result)}`)
-    }
+    // 모든 파일을 수집 (페이지네이션 지원)
+    const allFiles: any[] = []
+    let cursor: string | undefined
 
-    const allFiles = result.files || []
+    do {
+      let url: string
+      const baseParams = `parentFileId=${parentFolderId}&limit=500`
+      const cursorParam = cursor ? `&nextCursor=${encodeURIComponent(cursor)}` : ''
+
+      if (sharedDriveId === 'personal') {
+        url = `${NAVER_API_BASE}/users/me/drive/files?${baseParams}${cursorParam}`
+      } else {
+        url = `${NAVER_API_BASE}/sharedrives/${sharedDriveId}/files?${baseParams}${cursorParam}`
+      }
+
+      console.log('NaverDriveService: Fetching folders from URL:', url)
+
+      const response = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        console.error('NaverDriveService: listFolders failed:', result)
+        throw new Error(`Folder fetch failed: ${result.message || JSON.stringify(result)}`)
+      }
+
+      const pageFiles = result.files || []
+      allFiles.push(...pageFiles)
+
+      // 다음 페이지 커서 확인 (nextCursor 또는 cursor 필드)
+      cursor = result.nextCursor || result.cursor || undefined
+      console.log(`NaverDriveService: page fetched ${pageFiles.length} items, nextCursor: ${cursor ?? 'none'}`)
+    } while (cursor)
+
+    // 실제 필드 구조 파악을 위해 첫 번째 아이템 전체 출력
+    if (allFiles.length > 0) {
+      console.log('NaverDriveService: RAW first item keys:', Object.keys(allFiles[0]))
+      console.log('NaverDriveService: RAW first item:', JSON.stringify(allFiles[0]))
+    }
     console.log(`NaverDriveService: listFolders SUCCESS | Total items: ${allFiles.length} | Items:`, allFiles.map((f: any) => ({ name: f.fileName, type: f.fileType })))
-    
+
     // API 레벨 필터링이 안되므로 수동으로 폴더만 거름 (대소문자 무시)
     const foldersOnly = allFiles.filter((f: any) => {
       const type = (f.fileType || f.type || '').toLowerCase()
@@ -235,6 +340,61 @@ export class NaverDriveService {
 
     console.log(`NaverDriveService: Filtered folders count: ${foldersOnly.length}`)
     return foldersOnly
+  }
+
+  /**
+   * 파일 다운로드 (서버에서 Naver Works API 프록시)
+   * 반환값: fetch Response (스트림 그대로 전달 가능)
+   */
+  async downloadFile(
+    userId: string,
+    fileId: string,
+    driveType: DriveType = 'shared',
+    sharedDriveId?: string
+  ): Promise<Response> {
+    const token = await this.getValidToken(userId)
+    let url: string
+
+    if (driveType === 'personal') {
+      url = `${NAVER_API_BASE}/users/me/drive/files/${fileId}/content`
+    } else {
+      url = `${NAVER_API_BASE}/sharedrives/${sharedDriveId}/files/${fileId}/content`
+    }
+
+    console.log(`NaverDriveService: Downloading file ${fileId} from ${url}`)
+
+    return fetch(url, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+  }
+
+  /**
+   * 파일 삭제 (Drive에서 실제 파일 제거)
+   */
+  async deleteFile(
+    userId: string,
+    fileId: string,
+    driveType: DriveType = 'shared',
+    sharedDriveId?: string
+  ): Promise<void> {
+    const token = await this.getValidToken(userId)
+    const url = driveType === 'personal'
+      ? `${NAVER_API_BASE}/users/me/drive/files/${fileId}`
+      : `${NAVER_API_BASE}/sharedrives/${sharedDriveId}/files/${fileId}`
+
+    console.log(`NaverDriveService: 파일 삭제 → ${url}`)
+    const res = await fetch(url, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` },
+    })
+
+    if (!res.ok) {
+      const text = await res.text()
+      console.error(`NaverDriveService: 파일 삭제 실패 (${res.status}):`, text)
+      throw new Error(`Drive 파일 삭제 실패 (${res.status}): ${text}`)
+    }
+
+    console.log(`NaverDriveService: 파일 삭제 완료 fileId=${fileId}`)
   }
 
   async getFileInfo(userId: string, fileId: string, driveType: 'personal' | 'shared', sharedDriveId?: string) {
