@@ -1,6 +1,6 @@
 'use client'
 
-import { use, useState } from 'react'
+import { use, useState, useRef, useEffect } from 'react'
 import {
   useProject, useUpdateProject,
   useDevFeatures, useCreateDevFeature, useUpdateDevFeature, useDeleteDevFeature,
@@ -20,15 +20,16 @@ import {
 } from '@/lib/utils'
 import Link from 'next/link'
 import {
-  ArrowLeft, Users, Plus, Trash2, Check, X, ChevronDown,
+  ArrowLeft, Users, Plus, Trash2, Check, X, ChevronDown, ChevronRight,
   Calendar, Building2, User, DollarSign, GitBranch,
   BookOpen, FlaskConical, Rocket, Settings2, AlertTriangle,
-  Edit2, RefreshCw
+  Edit2, RefreshCw, Upload
 } from 'lucide-react'
 import type {
   ProjectStatus, DevPhase, DevType, ContractType,
   FeaturePriority, FeatureStatus, TestCaseStatus,
   DeployEnvironment, IssueType, IssuePriority, IssueStatus,
+  DevFeature,
 } from '@/types'
 
 // =============================================
@@ -389,6 +390,39 @@ function InfoRow({ icon, label, value }: { icon: React.ReactNode; label: string;
 }
 
 // =============================================
+// MD 파싱 타입 / 함수
+// =============================================
+type ParsedGroup = {
+  groupTitle: string
+  children: { title: string; completed: boolean }[]
+}
+
+function parseMd(text: string): ParsedGroup[] {
+  const lines = text.split('\n')
+  const groups: ParsedGroup[] = []
+  let current: ParsedGroup | null = null
+
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (trimmed.startsWith('## ')) {
+      if (current) groups.push(current)
+      current = { groupTitle: trimmed.slice(3).trim(), children: [] }
+    } else if (trimmed.match(/^- \[[ xX]\]/)) {
+      const completed = /^- \[[xX]\]/.test(trimmed)
+      const title = trimmed.replace(/^- \[[ xX]\]\s*/, '').trim()
+      if (title) {
+        // 현재 그룹이 없으면 임시 그룹 생성
+        if (!current) current = { groupTitle: '기타', children: [] }
+        current.children.push({ title, completed })
+      }
+    }
+  }
+  if (current) groups.push(current)
+  // 자식이 없는 그룹은 제외
+  return groups.filter(g => g.children.length > 0)
+}
+
+// =============================================
 // 기능 명세 탭
 // =============================================
 function FeaturesTab({ projectId }: { projectId: string }) {
@@ -396,25 +430,151 @@ function FeaturesTab({ projectId }: { projectId: string }) {
   const createFeature = useCreateDevFeature()
   const updateFeature = useUpdateDevFeature()
   const deleteFeature = useDeleteDevFeature()
+
+  // 개별 추가 폼 상태
   const [showForm, setShowForm] = useState(false)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [priority, setPriority] = useState<FeaturePriority>('required')
 
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault()
-    await createFeature.mutateAsync({ project_id: projectId, title, description: description || null, priority, position: features.length })
-    setTitle(''); setDescription(''); setShowForm(false)
-  }
+  // MD 가져오기 상태
+  const [showImport, setShowImport] = useState(false)
+  const [parsedGroups, setParsedGroups] = useState<ParsedGroup[]>([])
+  const [importing, setImporting] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
 
+  // 그룹 펼치기 상태 — 초기 로드 시 모든 그룹 자동 펼침
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
+  const initializedRef = useRef(false)
+  useEffect(() => {
+    if (!initializedRef.current && features.length > 0) {
+      const parentIds = features
+        .filter(f => features.some(c => c.parent_id === f.id))
+        .map(f => f.id)
+      setExpandedGroups(new Set(parentIds))
+      initializedRef.current = true
+    }
+  }, [features])
+
+  // 상위(parent_id=null) / 하위 분류
+  const topLevel = features.filter(f => !f.parent_id)
+  const childrenOf = (id: string) => features.filter(f => f.parent_id === id)
+
+  // 통계 (standalone + group의 자식들만 카운트)
   const stats = {
     total: features.length,
     completed: features.filter(f => f.status === 'completed').length,
     inProgress: features.filter(f => f.status === 'in_progress').length,
   }
 
+  // ── 체크박스 토글 (하위 완료 시 상위 자동 체크) ──
+  async function handleToggle(feature: DevFeature) {
+    const newStatus: FeatureStatus = feature.status === 'completed' ? 'pending' : 'completed'
+    await updateFeature.mutateAsync({ id: feature.id, project_id: projectId, status: newStatus })
+
+    // 자식이면 부모 자동 상태 업데이트
+    if (feature.parent_id) {
+      const siblings = features.filter(f => f.parent_id === feature.parent_id)
+      const allCompleted = siblings.every(f =>
+        f.id === feature.id ? newStatus === 'completed' : f.status === 'completed'
+      )
+      const parent = features.find(f => f.id === feature.parent_id)
+      if (parent) {
+        let newParentStatus: FeatureStatus = parent.status
+        if (allCompleted) newParentStatus = 'completed'
+        else if (parent.status === 'completed') newParentStatus = 'in_progress'
+        if (newParentStatus !== parent.status) {
+          await updateFeature.mutateAsync({ id: parent.id, project_id: projectId, status: newParentStatus })
+        }
+      }
+    }
+  }
+
+  // ── 개별 기능 생성 ──
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault()
+    await createFeature.mutateAsync({
+      project_id: projectId, title,
+      description: description || null,
+      priority, position: features.length,
+    })
+    setTitle(''); setDescription(''); setShowForm(false)
+  }
+
+  // ── MD 파일 읽기 → 파싱 미리보기 ──
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string
+      const parsed = parseMd(text)
+      if (parsed.length === 0) {
+        alert('MD 파일에서 인식된 기능이 없습니다.\n## 그룹명 / - [ ] 기능명 형식을 확인해주세요.')
+        return
+      }
+      setParsedGroups(parsed)
+      setShowImport(true)
+    }
+    reader.readAsText(file)
+    e.target.value = ''
+  }
+
+  // ── MD Import 실행: 부모 먼저 insert → 자식 insert ──
+  async function handleImport() {
+    setImporting(true)
+    try {
+      const startPos = features.length
+      for (let gi = 0; gi < parsedGroups.length; gi++) {
+        const group = parsedGroups[gi]
+        const allChildrenDone = group.children.every(c => c.completed)
+
+        // 상위 Feature 생성
+        const parent = await createFeature.mutateAsync({
+          project_id: projectId,
+          title: group.groupTitle,
+          description: null,
+          priority: 'required',
+          status: allChildrenDone ? 'completed' : 'pending',
+          position: startPos + gi * 100,
+        } as Parameters<typeof createFeature.mutateAsync>[0])
+
+        // 하위 Feature 생성
+        for (let ci = 0; ci < group.children.length; ci++) {
+          const child = group.children[ci]
+          await createFeature.mutateAsync({
+            project_id: projectId,
+            title: child.title,
+            description: null,
+            priority: 'required',
+            status: child.completed ? 'completed' : 'pending',
+            parent_id: parent.id,
+            position: ci,
+          } as Parameters<typeof createFeature.mutateAsync>[0])
+        }
+      }
+      setShowImport(false)
+      setParsedGroups([])
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  // ── 그룹 펼치기 토글 ──
+  function toggleGroup(id: string) {
+    setExpandedGroups(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
   return (
     <div className="space-y-5">
+      {/* 숨겨진 파일 input */}
+      <input ref={fileRef} type="file" accept=".md,.txt" className="hidden" onChange={handleFileChange} />
+
       {/* 통계 */}
       <div className="grid grid-cols-3 gap-4">
         {[
@@ -429,15 +589,78 @@ function FeaturesTab({ projectId }: { projectId: string }) {
         ))}
       </div>
 
-      {/* 추가 버튼 */}
-      <div className="flex justify-end">
-        <button onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-2 px-4 py-2 bg-orange-primary text-white text-xs font-black rounded-2xl hover:bg-orange-secondary transition-colors">
+      {/* 버튼 그룹 */}
+      <div className="flex justify-end gap-2">
+        <button
+          onClick={() => fileRef.current?.click()}
+          className="flex items-center gap-2 px-4 py-2 bg-white/60 glass text-orange-text/60 text-xs font-black rounded-2xl hover:bg-white/80 transition-all border border-white/30"
+        >
+          <Upload size={14} /> MD 가져오기
+        </button>
+        <button
+          onClick={() => setShowForm(!showForm)}
+          className="flex items-center gap-2 px-4 py-2 bg-orange-primary text-white text-xs font-black rounded-2xl hover:bg-orange-secondary transition-colors"
+        >
           <Plus size={14} /> 기능 추가
         </button>
       </div>
 
-      {/* 추가 폼 */}
+      {/* ── MD Import 미리보기 모달 ── */}
+      {showImport && parsedGroups.length > 0 && (
+        <div className="p-5 bg-white/70 glass rounded-2xl border border-orange-100 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-black text-orange-text">MD 가져오기 미리보기</h3>
+              <p className="text-[10px] opacity-50 mt-0.5">
+                {parsedGroups.length}개 그룹 ·&nbsp;
+                {parsedGroups.reduce((a, g) => a + g.children.length, 0)}개 기능
+              </p>
+            </div>
+            <button onClick={() => setShowImport(false)} className="p-1.5 hover:bg-white/50 rounded-lg">
+              <X size={14} className="text-orange-text/40" />
+            </button>
+          </div>
+
+          <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
+            {parsedGroups.map((g, gi) => (
+              <div key={gi} className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-black bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full">그룹</span>
+                  <span className="text-sm font-black text-orange-text">{g.groupTitle}</span>
+                  <span className="text-[10px] opacity-40">{g.children.length}개</span>
+                </div>
+                <div className="pl-5 space-y-0.5">
+                  {g.children.map((c, ci) => (
+                    <div key={ci} className="flex items-center gap-2 text-xs font-bold text-orange-text/60">
+                      <span className={`w-3.5 h-3.5 rounded border-2 flex-shrink-0 flex items-center justify-center ${
+                        c.completed ? 'bg-green-500 border-green-500' : 'border-orange-300'
+                      }`}>
+                        {c.completed && <Check size={8} className="text-white" />}
+                      </span>
+                      {c.title}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex gap-2 justify-end pt-2 border-t border-orange-100/50">
+            <button onClick={() => setShowImport(false)} className="px-4 py-2 text-[10px] font-black text-orange-text/40 hover:text-orange-text/70">
+              취소
+            </button>
+            <button
+              onClick={handleImport}
+              disabled={importing}
+              className="flex items-center gap-1.5 px-5 py-2 bg-gradient-to-r from-orange-primary to-orange-secondary text-white text-[10px] font-black rounded-xl disabled:opacity-50"
+            >
+              {importing ? '가져오는 중...' : `${parsedGroups.reduce((a, g) => a + g.children.length, 0) + parsedGroups.length}개 추가`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── 개별 추가 폼 ── */}
       {showForm && (
         <form onSubmit={handleCreate} className="p-5 bg-white/60 glass rounded-2xl space-y-3 animate-in fade-in slide-in-from-top-2">
           <input type="text" value={title} onChange={e => setTitle(e.target.value)} required
@@ -460,44 +683,123 @@ function FeaturesTab({ projectId }: { projectId: string }) {
         </form>
       )}
 
-      {/* 기능 목록 */}
+      {/* ── 기능 목록 (계층 구조) ── */}
       {isLoading ? (
         <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-16 bg-white/30 rounded-2xl animate-pulse" />)}</div>
-      ) : features.length === 0 ? (
+      ) : topLevel.length === 0 ? (
         <div className="text-center py-16 text-orange-text/40">
           <GitBranch size={32} className="mx-auto mb-3 opacity-30" />
-          <p className="font-black">기능 명세서가 없습니다</p>
+          <p className="font-black text-sm">기능 명세서가 없습니다</p>
+          <p className="text-xs opacity-60 mt-1">MD 파일로 한번에 가져오거나 직접 추가하세요</p>
         </div>
       ) : (
         <div className="space-y-2">
-          {features.map(feature => (
-            <div key={feature.id} className="p-4 bg-white/40 glass rounded-2xl flex items-center gap-4 group">
-              {/* 우선순위 */}
-              <span className={`text-[9px] font-black px-2 py-1 rounded-lg flex-shrink-0 ${FEATURE_PRIORITY_COLORS[feature.priority]}`}>
-                {FEATURE_PRIORITY_LABELS[feature.priority]}
-              </span>
-              {/* 제목 */}
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-bold text-orange-text truncate">{feature.title}</div>
-                {feature.description && <div className="text-xs font-bold opacity-40 truncate mt-0.5">{feature.description}</div>}
+          {topLevel.map(feature => {
+            const children = childrenOf(feature.id)
+            const isGroup = children.length > 0
+            const isExpanded = expandedGroups.has(feature.id)
+            const doneCount = children.filter(c => c.status === 'completed').length
+
+            return (
+              <div key={feature.id}>
+                {/* 상위 Feature */}
+                <div
+                  className={`p-4 bg-white/40 glass rounded-2xl flex items-center gap-3 group ${isGroup ? 'cursor-pointer select-none' : ''}`}
+                  onClick={isGroup ? () => toggleGroup(feature.id) : undefined}
+                >
+                  {/* 체크박스 */}
+                  <button
+                    type="button"
+                    onClick={e => { e.stopPropagation(); handleToggle(feature) }}
+                    className={`w-5 h-5 rounded-md border-2 flex-shrink-0 flex items-center justify-center transition-all hover:scale-110 ${
+                      feature.status === 'completed'
+                        ? 'bg-green-500 border-green-500'
+                        : 'border-orange-300 hover:border-orange-primary'
+                    }`}
+                  >
+                    {feature.status === 'completed' && <Check size={11} className="text-white" />}
+                  </button>
+
+                  {/* 제목 + 서브텍스트 */}
+                  <div className="flex-1 min-w-0">
+                    <div className={`text-sm font-black text-orange-text ${feature.status === 'completed' ? 'line-through opacity-40' : ''}`}>
+                      {feature.title}
+                    </div>
+                    {feature.description && (
+                      <div className="text-xs font-bold opacity-40 truncate mt-0.5">{feature.description}</div>
+                    )}
+                    {isGroup && (
+                      <div className="text-[10px] font-black opacity-40 mt-0.5">
+                        {doneCount}/{children.length} 완료
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 우측 메타 */}
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {!isGroup && (
+                      <span className={`text-[9px] font-black px-2 py-1 rounded-lg ${FEATURE_PRIORITY_COLORS[feature.priority]}`}>
+                        {FEATURE_PRIORITY_LABELS[feature.priority]}
+                      </span>
+                    )}
+                    {isGroup && (
+                      <ChevronRight size={14} className={`text-orange-text/30 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`} />
+                    )}
+                    <button
+                      type="button"
+                      onClick={e => {
+                        e.stopPropagation()
+                        if (confirm(`"${feature.title}" 항목을 삭제할까요?${isGroup ? '\n(하위 기능도 모두 삭제됩니다)' : ''}`))
+                          deleteFeature.mutate({ id: feature.id, project_id: projectId })
+                      }}
+                      className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-red-50 hover:text-red-500 rounded-lg transition-all text-orange-text/30"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* 하위 Features */}
+                {isGroup && isExpanded && (
+                  <div className="ml-7 mt-1 space-y-1">
+                    {children.map(child => (
+                      <div key={child.id} className="p-3 bg-white/25 glass rounded-xl flex items-center gap-3 group">
+                        {/* 자식 체크박스 */}
+                        <button
+                          type="button"
+                          onClick={() => handleToggle(child)}
+                          className={`w-4 h-4 rounded border-2 flex-shrink-0 flex items-center justify-center transition-all hover:scale-110 ${
+                            child.status === 'completed'
+                              ? 'bg-green-500 border-green-500'
+                              : 'border-orange-300 hover:border-orange-primary'
+                          }`}
+                        >
+                          {child.status === 'completed' && <Check size={9} className="text-white" />}
+                        </button>
+
+                        {/* 자식 제목 */}
+                        <div className={`flex-1 text-xs font-bold text-orange-text ${child.status === 'completed' ? 'line-through opacity-40' : ''}`}>
+                          {child.title}
+                        </div>
+
+                        {/* 자식 삭제 */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (confirm(`"${child.title}" 항목을 삭제할까요?`))
+                              deleteFeature.mutate({ id: child.id, project_id: projectId })
+                          }}
+                          className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-50 hover:text-red-500 rounded-lg transition-all text-orange-text/30"
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-              {/* 상태 선택 */}
-              <select
-                value={feature.status}
-                onChange={e => updateFeature.mutate({ id: feature.id, project_id: projectId, status: e.target.value as FeatureStatus })}
-                className={`text-[9px] font-black px-2 py-1.5 rounded-xl border-0 focus:outline-none focus:ring-1 focus:ring-orange-primary/30 cursor-pointer ${FEATURE_STATUS_COLORS[feature.status]}`}
-              >
-                {(Object.entries(FEATURE_STATUS_LABELS) as [FeatureStatus, string][]).map(([v, l]) => (
-                  <option key={v} value={v}>{l}</option>
-                ))}
-              </select>
-              {/* 삭제 */}
-              <button onClick={() => { if (confirm(`"${feature.title}" 항목을 삭제할까요?`)) deleteFeature.mutate({ id: feature.id, project_id: projectId }) }}
-                className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-red-50 hover:text-red-500 rounded-lg transition-all text-orange-text/30">
-                <Trash2 size={13} />
-              </button>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>

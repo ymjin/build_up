@@ -5,7 +5,21 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-// R&D 과제 상태 레이블 (기존 유지)
+// 프로젝트 카테고리 레이블
+export const PROJECT_CATEGORY_LABELS: Record<string, string> = {
+  external: '외부',
+  internal: '내부',
+  personal: '개인',
+}
+
+// 프로젝트 카테고리 색상
+export const PROJECT_CATEGORY_COLORS: Record<string, string> = {
+  external: 'bg-blue-100 text-blue-700',
+  internal: 'bg-purple-100 text-purple-700',
+  personal: 'bg-slate-100 text-slate-600',
+}
+
+// 프로젝트 상태 레이블
 export const PROJECT_STATUS_LABELS: Record<string, Record<string, string>> = {
   rnd: {
     planning: '검토',
@@ -13,12 +27,31 @@ export const PROJECT_STATUS_LABELS: Record<string, Record<string, string>> = {
     testing: '완료',
     completed: '제출',
   },
-  // 개발 프로젝트 전용 상태
+  // 외부/내부/개인 프로젝트 상태
   development: {
     contract_pending: '계약협의',
     in_progress: '진행중',
     review: '검수',
     operating: '운영중',
+    completed: '완료',
+    on_hold: '보류',
+  },
+  external: {
+    contract_pending: '계약협의',
+    in_progress: '진행중',
+    review: '검수',
+    operating: '운영중',
+    completed: '완료',
+    on_hold: '보류',
+  },
+  internal: {
+    in_progress: '진행중',
+    review: '검수',
+    completed: '완료',
+    on_hold: '보류',
+  },
+  personal: {
+    in_progress: '진행중',
     completed: '완료',
     on_hold: '보류',
   },

@@ -3,14 +3,17 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useCreateProject } from '@/lib/queries'
-import { PROJECT_STATUS_LABELS, DEV_TYPE_LABELS, CONTRACT_TYPE_LABELS, DEV_PHASE_LABELS } from '@/lib/utils'
-import type { ProjectStatus, DevType, ContractType, DevPhase } from '@/types'
+import { PROJECT_STATUS_LABELS, DEV_TYPE_LABELS, CONTRACT_TYPE_LABELS, DEV_PHASE_LABELS, PROJECT_CATEGORY_LABELS } from '@/lib/utils'
+import type { ProjectStatus, DevType, ContractType, DevPhase, ProjectCategory } from '@/types'
 import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 
 export default function NewProjectPage() {
   const router = useRouter()
   const createProject = useCreateProject()
+
+  // 카테고리
+  const [category, setCategory] = useState<ProjectCategory>('external')
 
   // 기본 정보
   const [name, setName] = useState('')
@@ -20,7 +23,7 @@ export default function NewProjectPage() {
   const [pmName, setPmName] = useState('')
 
   // 상태 / 단계
-  const [status, setStatus] = useState<ProjectStatus>('contract_pending')
+  const [status, setStatus] = useState<ProjectStatus>('in_progress')
   const [devPhase, setDevPhase] = useState<DevPhase>('planning')
 
   // 일정
@@ -32,29 +35,50 @@ export default function NewProjectPage() {
   const [contractAmount, setContractAmount] = useState('')
   const [contractType, setContractType] = useState<ContractType>('fixed')
 
+  // 에러 메시지
+  const [errorMsg, setErrorMsg] = useState('')
+
+  // 카테고리 변경 시 상태 초기화
+  function handleCategoryChange(val: ProjectCategory) {
+    setCategory(val)
+    setErrorMsg('')
+    if (val === 'external') setStatus('contract_pending')
+    else setStatus('in_progress')
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    setErrorMsg('')
     try {
-      const project = await createProject.mutateAsync({
+      // 카테고리별 필요한 필드만 전달
+      const payload: Record<string, unknown> = {
         name,
         description: description || null,
         status,
-        category: 'development',
-        conclusion: null,
+        category,
         progress: 0,
-        client_name: clientName || null,
-        dev_type: devType,
-        pm_name: pmName || null,
         dev_phase: devPhase,
-        contract_date: contractDate || null,
         start_date: startDate || null,
         deadline: deadline || null,
-        contract_amount: contractAmount ? parseInt(contractAmount.replace(/,/g, ''), 10) : null,
-        contract_type: contractType,
-      })
+      }
+      if (category === 'external') {
+        payload.client_name = clientName || null
+        payload.pm_name = pmName || null
+        payload.dev_type = devType
+        payload.contract_date = contractDate || null
+        payload.contract_amount = contractAmount ? parseInt(contractAmount.replace(/,/g, ''), 10) : null
+        payload.contract_type = contractType
+      }
+      const project = await createProject.mutateAsync(payload)
       router.push(`/projects/${project.id}`)
-    } catch (err) {
+    } catch (err: unknown) {
       console.error(err)
+      // Supabase 에러는 message 프로퍼티가 있는 객체
+      const msg =
+        err instanceof Error ? err.message
+        : (err as { message?: string })?.message
+        ?? JSON.stringify(err)
+      setErrorMsg(msg)
     }
   }
 
@@ -71,9 +95,38 @@ export default function NewProjectPage() {
         프로젝트 목록
       </Link>
 
-      <h1 className="text-2xl font-black uppercase italic tracking-tight text-orange-text mb-8">새 개발 프로젝트</h1>
+      <h1 className="text-2xl font-black uppercase italic tracking-tight text-orange-text mb-8">새 프로젝트</h1>
 
       <form onSubmit={handleSubmit} className="space-y-8">
+        {/* 카테고리 선택 */}
+        <div className="p-6 bg-white/60 glass rounded-3xl space-y-4">
+          <h2 className="text-xs font-black uppercase tracking-widest opacity-50">프로젝트 구분</h2>
+          <div className="grid grid-cols-3 gap-3">
+            {(Object.entries(PROJECT_CATEGORY_LABELS) as [ProjectCategory, string][]).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => handleCategoryChange(value)}
+                className={`py-4 rounded-2xl text-sm font-black tracking-widest transition-all flex flex-col items-center gap-1.5 border-2 ${
+                  category === value
+                    ? 'border-orange-primary bg-orange-primary/10 text-orange-primary'
+                    : 'border-transparent bg-white/50 text-orange-text/40 hover:bg-white/80'
+                }`}
+              >
+                <span className="text-xl">
+                  {value === 'external' ? '🤝' : value === 'internal' ? '🏢' : '🔒'}
+                </span>
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="text-[10px] font-bold opacity-40">
+            {category === 'external' && '클라이언트 발주 프로젝트 — 계약/납기 관리 포함'}
+            {category === 'internal' && '사내 자체 개발 프로젝트 — 팀원 공유 가능'}
+            {category === 'personal' && '개인 프로젝트 — 본인만 열람 가능'}
+          </p>
+        </div>
+
         {/* 기본 정보 섹션 */}
         <div className="p-6 bg-white/60 glass rounded-3xl space-y-5">
           <h2 className="text-xs font-black uppercase tracking-widest opacity-50">기본 정보</h2>
@@ -90,28 +143,31 @@ export default function NewProjectPage() {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-black uppercase tracking-widest opacity-50 mb-2">클라이언트</label>
-              <input
-                type="text"
-                value={clientName}
-                onChange={e => setClientName(e.target.value)}
-                className="w-full px-4 py-3 bg-white/80 rounded-2xl border border-white/50 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-orange-primary/30"
-                placeholder="발주처명"
-              />
+          {/* 외부 프로젝트: 클라이언트 + PM */}
+          {category === 'external' && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-black uppercase tracking-widest opacity-50 mb-2">클라이언트</label>
+                <input
+                  type="text"
+                  value={clientName}
+                  onChange={e => setClientName(e.target.value)}
+                  className="w-full px-4 py-3 bg-white/80 rounded-2xl border border-white/50 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-orange-primary/30"
+                  placeholder="발주처명"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-black uppercase tracking-widest opacity-50 mb-2">PM 담당자</label>
+                <input
+                  type="text"
+                  value={pmName}
+                  onChange={e => setPmName(e.target.value)}
+                  className="w-full px-4 py-3 bg-white/80 rounded-2xl border border-white/50 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-orange-primary/30"
+                  placeholder="담당자명"
+                />
+              </div>
             </div>
-            <div>
-              <label className="block text-xs font-black uppercase tracking-widest opacity-50 mb-2">PM 담당자</label>
-              <input
-                type="text"
-                value={pmName}
-                onChange={e => setPmName(e.target.value)}
-                className="w-full px-4 py-3 bg-white/80 rounded-2xl border border-white/50 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-orange-primary/30"
-                placeholder="담당자명"
-              />
-            </div>
-          </div>
+          )}
 
           <div>
             <label className="block text-xs font-black uppercase tracking-widest opacity-50 mb-2">설명</label>
@@ -153,7 +209,7 @@ export default function NewProjectPage() {
           <div>
             <label className="block text-xs font-black uppercase tracking-widest opacity-50 mb-3">현재 상태</label>
             <div className="flex flex-wrap gap-2">
-              {(Object.entries(PROJECT_STATUS_LABELS.development) as [ProjectStatus, string][]).map(([value, label]) => (
+              {(Object.entries(PROJECT_STATUS_LABELS[category] ?? PROJECT_STATUS_LABELS.external) as [ProjectStatus, string][]).map(([value, label]) => (
                 <button
                   key={value}
                   type="button"
@@ -225,7 +281,8 @@ export default function NewProjectPage() {
           </div>
         </div>
 
-        {/* 계약 섹션 */}
+        {/* 계약 섹션 — 외부 프로젝트 전용 */}
+        {category === 'external' && (
         <div className="p-6 bg-white/60 glass rounded-3xl space-y-5">
           <h2 className="text-xs font-black uppercase tracking-widest opacity-50">계약</h2>
 
@@ -263,6 +320,14 @@ export default function NewProjectPage() {
             </div>
           </div>
         </div>
+        )}
+
+        {/* 에러 메시지 */}
+        {errorMsg && (
+          <div className="p-4 bg-red-50 border border-red-200 rounded-2xl text-sm font-bold text-red-600">
+            ⚠️ {errorMsg}
+          </div>
+        )}
 
         <button
           type="submit"

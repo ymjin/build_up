@@ -12,7 +12,7 @@ export type ProjectStatus =
   | 'operating'         // 운영중 (개발 전용)
   | 'on_hold'           // 보류 (개발 전용)
 
-export type ProjectCategory = 'rnd' | 'development'
+export type ProjectCategory = 'external' | 'internal' | 'personal'
 export type ProjectConclusion = 'ongoing' | 'pending' | 'dropped'
 export type TaskStatus = 'todo' | 'in_progress' | 'done'
 export type MemberRole = 'owner' | 'admin' | 'member' | 'tester'
@@ -70,7 +70,7 @@ export interface Project {
   description: string | null
   status: ProjectStatus
   category: ProjectCategory
-  conclusion: ProjectConclusion | null
+  conclusion?: ProjectConclusion | null
   progress: number
   owner_id: string
   drive_folder_id?: string
@@ -140,6 +140,7 @@ export interface Activity {
 export interface DevFeature {
   id: string
   project_id: string
+  parent_id: string | null   // 상위 Feature ID (null이면 최상위)
   title: string
   description: string | null
   priority: FeaturePriority

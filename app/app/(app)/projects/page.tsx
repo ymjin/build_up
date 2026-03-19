@@ -4,10 +4,19 @@ import { useState } from 'react'
 import { useProjects, useDeleteProject } from '@/lib/queries'
 import { DEV_STATUS_COLORS, PROJECT_STATUS_LABELS, DEV_TYPE_LABELS, calcDday, formatShortDate } from '@/lib/utils'
 import Link from 'next/link'
-import { Plus, Trash2, Search, Calendar, User, Building2 } from 'lucide-react'
-import type { ProjectStatus } from '@/types'
+import { Plus, Trash2, Search, Calendar, User, Building2, Lock } from 'lucide-react'
+import type { ProjectStatus, ProjectCategory } from '@/types'
+import { PROJECT_CATEGORY_LABELS, PROJECT_CATEGORY_COLORS } from '@/lib/utils'
 
-// 개발 프로젝트 상태 필터 옵션
+// 카테고리 필터 옵션
+const CATEGORY_OPTIONS: { label: string; value: ProjectCategory | 'all' }[] = [
+  { label: '전체', value: 'all' },
+  { label: '외부', value: 'external' },
+  { label: '내부', value: 'internal' },
+  { label: '개인', value: 'personal' },
+]
+
+// 상태 필터 옵션
 const STATUS_OPTIONS: { label: string; value: ProjectStatus | 'all' }[] = [
   { label: '전체', value: 'all' },
   { label: '계약협의', value: 'contract_pending' },
@@ -21,18 +30,19 @@ const STATUS_OPTIONS: { label: string; value: ProjectStatus | 'all' }[] = [
 export default function ProjectsPage() {
   const { data: projects, isLoading } = useProjects()
   const deleteProject = useDeleteProject()
+  const [categoryFilter, setCategoryFilter] = useState<ProjectCategory | 'all'>('all')
   const [statusFilter, setStatusFilter] = useState<ProjectStatus | 'all'>('all')
   const [searchQuery, setSearchQuery] = useState('')
 
-  // 개발 프로젝트만 필터링
+  // 카테고리 + 상태 + 검색 필터링
   const filtered = projects?.filter(p => {
-    if (p.category !== 'development') return false
+    const matchesCategory = categoryFilter === 'all' || p.category === categoryFilter
     const matchesStatus = statusFilter === 'all' || p.status === statusFilter
     const matchesSearch =
       p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (p.client_name?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false) ||
       (p.description?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false)
-    return matchesStatus && matchesSearch
+    return matchesCategory && matchesStatus && matchesSearch
   })
 
   return (
@@ -40,8 +50,8 @@ export default function ProjectsPage() {
       {/* 헤더 */}
       <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 className="text-3xl font-black uppercase italic tracking-tight text-orange-text">개발 프로젝트</h1>
-          <p className="text-xs font-bold opacity-40 uppercase tracking-widest mt-1">Development Project Management</p>
+          <h1 className="text-3xl font-black uppercase italic tracking-tight text-orange-text">프로젝트</h1>
+          <p className="text-xs font-bold opacity-40 uppercase tracking-widest mt-1">Project Management</p>
         </div>
         <Link
           href="/projects/new"
@@ -50,6 +60,23 @@ export default function ProjectsPage() {
           <Plus size={16} />
           새 프로젝트
         </Link>
+      </div>
+
+      {/* 카테고리 탭 */}
+      <div className="flex gap-1 p-1 bg-white/30 glass rounded-2xl mb-4 w-fit">
+        {CATEGORY_OPTIONS.map(opt => (
+          <button
+            key={opt.value}
+            onClick={() => setCategoryFilter(opt.value)}
+            className={`px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
+              categoryFilter === opt.value
+                ? 'bg-orange-primary text-white shadow-md'
+                : 'text-orange-text/40 hover:text-orange-text/60'
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
       </div>
 
       {/* 검색 + 상태 필터 */}
@@ -91,7 +118,7 @@ export default function ProjectsPage() {
       ) : filtered?.length === 0 ? (
         <div className="text-center py-24 text-orange-text/40">
           <div className="text-5xl mb-4">💻</div>
-          <p className="font-black text-lg">개발 프로젝트가 없습니다</p>
+          <p className="font-black text-lg">프로젝트가 없습니다</p>
           <Link href="/projects/new" className="text-orange-secondary font-black text-sm mt-3 inline-block hover:underline">
             새 프로젝트 만들기 →
           </Link>
@@ -99,8 +126,11 @@ export default function ProjectsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {filtered?.map(project => {
-            const statusLabel = PROJECT_STATUS_LABELS.development[project.status] ?? project.status
+            const catKey = project.category ?? 'external'
+            const statusLabel = (PROJECT_STATUS_LABELS[catKey] ?? PROJECT_STATUS_LABELS.external)[project.status] ?? project.status
             const statusColor = DEV_STATUS_COLORS[project.status] ?? 'bg-slate-100 text-slate-600'
+            const categoryLabel = PROJECT_CATEGORY_LABELS[catKey]
+            const categoryColor = PROJECT_CATEGORY_COLORS[catKey]
 
             return (
               <div key={project.id} className="group p-6 bg-white/50 glass rounded-3xl hover:shadow-lg transition-all relative">
@@ -117,8 +147,12 @@ export default function ProjectsPage() {
                 </button>
 
                 <Link href={`/projects/${project.id}`} className="block">
-                  {/* 상태 + 유형 뱃지 */}
+                  {/* 카테고리 + 상태 + 유형 뱃지 */}
                   <div className="flex flex-wrap gap-2 mb-3 pr-8">
+                    <span className={`text-[10px] font-black px-2.5 py-1 rounded-full flex items-center gap-1 ${categoryColor}`}>
+                      {project.category === 'personal' && <Lock size={8} />}
+                      {categoryLabel}
+                    </span>
                     <span className={`text-[10px] font-black px-2.5 py-1 rounded-full ${statusColor}`}>
                       {statusLabel}
                     </span>

@@ -6,12 +6,18 @@ export async function GET() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  // 관리자 권한 체크 (테스트 이메일 예외 포함)
-  if (!user?.user_metadata?.is_admin && user?.email !== 'test@example.com' && user?.email !== 'aira@aira.kr') {
+  // 관리자 권한 체크
+  if (user?.email !== 'aira@aira.kr' && !user?.user_metadata?.is_admin) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
   }
-  
-  const { data, error } = await supabase
+
+  // RLS 우회: Service Role Key로 읽기
+  const adminClient = createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+
+  const { data, error } = await adminClient
     .from('system_settings')
     .select('*')
 
@@ -35,8 +41,8 @@ export async function POST(request: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  // 관리자 권한 체크 (테스트 이메일 예외 포함)
-  if (!user?.user_metadata?.is_admin && user?.email !== 'test@example.com' && user?.email !== 'aira@aira.kr') {
+  // 관리자 권한 체크
+  if (user?.email !== 'aira@aira.kr' && !user?.user_metadata?.is_admin) {
     return NextResponse.json({ error: '관리자 권한이 필요합니다' }, { status: 403 })
   }
 
