@@ -318,19 +318,73 @@ function OverviewTab({ projectId }: { projectId: string }) {
           </div>
 
           {/* 진행률 */}
-          <div className="mb-5">
-            <div className="flex justify-between text-[10px] font-black opacity-50 uppercase mb-2">
-              <span>전체 진행률</span>
-              <span>{editMode ? progress : project.progress}%</span>
+          <div className="mb-5 space-y-4">
+            {/* 단계별 진행률 */}
+            <div>
+              <div className="text-[10px] font-black opacity-40 uppercase tracking-widest mb-3">단계별 진행률</div>
+              <div className="space-y-2">
+                {DEV_PHASE_ORDER.map((phase, idx) => {
+                  const isDone = idx < currentPhaseIdx
+                  const isCurrent = idx === currentPhaseIdx
+                  const phaseProgress = isDone ? 100 : isCurrent ? (editMode ? progress : project.progress) : 0
+                  return (
+                    <div key={phase} className="flex items-center gap-3">
+                      {/* 단계 라벨 */}
+                      <div className={`w-12 text-[9px] font-black uppercase tracking-widest flex-shrink-0 ${
+                        isCurrent ? 'text-orange-primary' : isDone ? 'text-orange-300' : 'text-orange-text/20'
+                      }`}>
+                        {DEV_PHASE_LABELS[phase]}
+                      </div>
+                      {/* 프로그레스 바 */}
+                      <div className="flex-1 h-1.5 bg-orange-100 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            isDone
+                              ? 'bg-orange-300'
+                              : isCurrent
+                              ? 'bg-gradient-to-r from-orange-primary to-orange-secondary'
+                              : 'bg-transparent'
+                          }`}
+                          style={{ width: `${phaseProgress}%` }}
+                        />
+                      </div>
+                      {/* 퍼센트 */}
+                      <div className={`w-8 text-right text-[9px] font-black flex-shrink-0 ${
+                        isCurrent ? 'text-orange-primary' : isDone ? 'text-orange-300' : 'text-orange-text/20'
+                      }`}>
+                        {phaseProgress}%
+                      </div>
+                      {/* 완료 체크 */}
+                      {isDone && (
+                        <div className="w-4 flex-shrink-0 text-orange-300">
+                          <Check size={10} strokeWidth={3} />
+                        </div>
+                      )}
+                      {!isDone && <div className="w-4 flex-shrink-0" />}
+                    </div>
+                  )
+                })}
+              </div>
             </div>
-            {editMode ? (
-              <input type="range" min={0} max={100} value={progress}
-                onChange={e => setProgress(Number(e.target.value))}
-                className="w-full accent-orange-primary mb-1" />
-            ) : null}
-            <div className="h-2 bg-orange-100 rounded-full overflow-hidden">
-              <div className="h-full bg-gradient-to-r from-orange-primary to-orange-secondary rounded-full transition-all"
-                style={{ width: `${editMode ? progress : project.progress}%` }} />
+
+            {/* 구분선 */}
+            <div className="h-px bg-orange-100/60" />
+
+            {/* 전체 진행률 */}
+            <div>
+              <div className="flex justify-between text-[10px] font-black opacity-50 uppercase mb-2">
+                <span>전체 진행률</span>
+                <span className="text-orange-primary">{editMode ? progress : project.progress}%</span>
+              </div>
+              {editMode ? (
+                <input type="range" min={0} max={100} value={progress}
+                  onChange={e => setProgress(Number(e.target.value))}
+                  className="w-full accent-orange-primary mb-2" />
+              ) : null}
+              <div className="h-2.5 bg-orange-100 rounded-full overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-orange-primary to-orange-secondary rounded-full transition-all"
+                  style={{ width: `${editMode ? progress : project.progress}%` }} />
+              </div>
             </div>
           </div>
 
