@@ -15,7 +15,7 @@ frontend:
         - cp -r app/.next/standalone/. .amplify-hosting/compute/default/
         - cp -r app/.next/static .amplify-hosting/static/_next/static
         - cp -r app/public/. .amplify-hosting/static/
-        - "printf '{\"version\":1,\"routes\":[{\"path\":\"/_next/static/*\",\"target\":{\"kind\":\"Static\"},\"fallback\":null},{\"path\":\"/favicon.ico\",\"target\":{\"kind\":\"Static\"},\"fallback\":null},{\"path\":\"/*.*\",\"target\":{\"kind\":\"Static\"},\"fallback\":{\"kind\":\"Compute\",\"src\":\"default\"}},{\"path\":\"/*\",\"target\":{\"kind\":\"Compute\",\"src\":\"default\"},\"fallback\":null}],\"computeResources\":[{\"name\":\"default\",\"entrypoint\":\"server.js\",\"runtime\":\"nodejs18.x\"}],\"framework\":{\"name\":\"Next.js\",\"version\":\"16\"}}' > .amplify-hosting/deploy-manifest.json"
+        - "printf '{\"version\":1,\"routes\":[{\"path\":\"/_next/static/*\",\"target\":{\"kind\":\"Static\"}},{\"path\":\"/favicon.ico\",\"target\":{\"kind\":\"Static\"}},{\"path\":\"/*.*\",\"target\":{\"kind\":\"Static\"},\"fallback\":{\"kind\":\"Compute\",\"src\":\"default\"}},{\"path\":\"/*\",\"target\":{\"kind\":\"Compute\",\"src\":\"default\"}}],\"computeResources\":[{\"name\":\"default\",\"entrypoint\":\"server.js\",\"runtime\":\"nodejs20.x\"}],\"framework\":{\"name\":\"Next.js\",\"version\":\"16\"}}' > .amplify-hosting/deploy-manifest.json"
   artifacts:
     baseDirectory: .amplify-hosting
     files:
