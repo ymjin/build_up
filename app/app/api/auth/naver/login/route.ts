@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 
 export async function GET(request: Request) {
   const client_id = process.env.NAVER_WORKS_CLIENT_ID
-  const redirect_uri = `${new URL(request.url).origin}/api/auth/naver/callback`
+  const redirect_uri = `${process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin}/api/auth/naver/callback`
   const state = Math.random().toString(36).substring(7)
   
   // 네이버웍스 인증 URL 생성
