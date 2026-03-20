@@ -1,0 +1,21 @@
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        # 앱 디렉토리로 이동 후 프로덕션 의존성만 설치 (devDependencies 포함 - 빌드에 필요)
+        - cd app && npm ci
+    build:
+      commands:
+        # 운영(Production) 빌드 - Lambda SSR 모드로 자동 변환
+        - cd app && NODE_ENV=production npm run build
+  artifacts:
+    # Amplify가 .next 폴더를 분석하여 Lambda 함수 자동 생성
+    baseDirectory: app/.next
+    files:
+      - '**/*'
+  cache:
+    paths:
+      # 빌드 속도 향상을 위한 캐시 설정
+      - app/node_modules/**/*
+      - app/.next/cache/**/*
