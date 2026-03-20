@@ -2,13 +2,14 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
 export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url)
+  const { searchParams } = new URL(request.url)
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin
   const code = searchParams.get('code')
-  const client_id = process.env.NAVER_WORKS_CLIENT_ID
+  const client_id = process.env.NEXT_PUBLIC_NAVER_WORKS_CLIENT_ID || process.env.NAVER_WORKS_CLIENT_ID
   const client_secret = process.env.NAVER_WORKS_CLIENT_SECRET
-  
+
   if (!code) {
-    return NextResponse.redirect(`${origin}/auth/login?error=no_code`)
+    return NextResponse.redirect(`${appUrl}/auth/login?error=no_code`)
   }
 
   try {
@@ -21,7 +22,7 @@ export async function GET(request: Request) {
       client_id: client_id!,
       client_secret: client_secret!,
       grant_type: 'authorization_code',
-      redirect_uri: `${origin}/api/auth/naver/callback`
+      redirect_uri: `${appUrl}/api/auth/naver/callback`
     })
 
     const tokenResponse = await fetch('https://auth.worksmobile.com/oauth2/v2.0/token', {
@@ -139,7 +140,7 @@ export async function GET(request: Request) {
     const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
       type: 'magiclink',
       email: userEmail,
-      options: { redirectTo: `${origin}/dashboard` }
+      options: { redirectTo: `${appUrl}/dashboard` }
     })
 
     if (linkError) {
@@ -207,6 +208,6 @@ export async function GET(request: Request) {
     return NextResponse.redirect(linkData.properties.action_link)
   } catch (err: any) {
     console.error('Callback error:', err)
-    return NextResponse.redirect(`${origin}/auth/login?error=${encodeURIComponent(err.message)}`)
+    return NextResponse.redirect(`${appUrl}/auth/login?error=${encodeURIComponent(err.message)}`)
   }
 }
