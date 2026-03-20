@@ -59,7 +59,7 @@ export class NaverDriveService {
     if (tokens.error) throw new Error(`Refresh failed: ${tokens.error_description}`)
 
     const expiresAt = new Date(Date.now() + (tokens.expires_in || 3600) * 1000).toISOString()
-    
+
     await this.supabase
       .from('naver_tokens')
       .update({
@@ -80,8 +80,8 @@ export class NaverDriveService {
   }
 
   async createFolder(
-    userId: string, 
-    folderName: string, 
+    userId: string,
+    folderName: string,
     parentFolderId: string = 'root',
     driveType: DriveType = 'personal',
     sharedDriveId?: string
@@ -100,7 +100,7 @@ export class NaverDriveService {
     } else {
       url = `${NAVER_API_BASE}/sharedrives/${sharedDriveId}/files/${parentId}/createfolder`
     }
-    
+
     console.log(`NaverDriveService: POST ${url} | Body:`, JSON.stringify(body))
 
     const response = await fetch(url, {
@@ -127,7 +127,7 @@ export class NaverDriveService {
       try {
         const result = JSON.parse(resultText)
         errorMessage = result.message || result.description || result.error_description || response.statusText
-      } catch (e) {}
+      } catch (e) { }
 
       throw new Error(`Folder creation failed: ${errorMessage} (Status: ${response.status})`)
     }
@@ -222,7 +222,7 @@ export class NaverDriveService {
     const putRes = await fetch(uploadUrl, {
       method: 'PUT',
       headers: { ...authHeaders, 'Content-Type': 'application/octet-stream' },
-      body: file,
+      body: new Uint8Array(file)
     })
     const putText = await putRes.text()
     console.log(`NaverDriveService: PUT 응답 (${putRes.status}):`, putText.substring(0, 300))
@@ -234,7 +234,7 @@ export class NaverDriveService {
     try {
       const putJson = JSON.parse(putText)
       uploadedFileId = putJson.fileId ?? null
-    } catch {}
+    } catch { }
 
     if (!uploadedFileId) throw new Error('업로드 응답에서 fileId를 찾을 수 없습니다')
     console.log(`NaverDriveService: 업로드 완료 fileId=${uploadedFileId}`)
@@ -261,22 +261,22 @@ export class NaverDriveService {
   async listSharedDrives(userId: string): Promise<any[]> {
     console.log('NaverDriveService: Fetching drives for user:', userId)
     const token = await this.getValidToken(userId)
-    
+
     const response = await fetch(`${NAVER_API_BASE}/sharedrives`, {
       headers: { 'Authorization': `Bearer ${token}` }
     })
-    
+
     const result = await response.json()
     console.log('NaverDriveService: listSharedDrives raw response:', JSON.stringify(result, null, 2))
-    
+
     // v2.0 표준은 sharedrives (소문자), v1.0 호환성 혹은 오타 대비 sharedDrives 체크
     const sharedDrives = result.sharedrives || result.sharedDrives || []
-    
+
     if (!Array.isArray(sharedDrives)) {
       console.warn('NaverDriveService: sharedDrives is not an array:', sharedDrives)
       return []
     }
-    
+
     // 드라이브 객체 표준화 (sharedriveId, sharedriveName 보장)
     return sharedDrives.map((d: any) => ({
       sharedriveId: d.sharedriveId || d.sharedDriveId || d.id,
@@ -399,7 +399,7 @@ export class NaverDriveService {
 
   async getFileInfo(userId: string, fileId: string, driveType: 'personal' | 'shared', sharedDriveId?: string) {
     const token = await this.getValidToken(userId)
-    const url = driveType === 'shared' 
+    const url = driveType === 'shared'
       ? `${NAVER_API_BASE}/sharedrives/${sharedDriveId}/files/${fileId}`
       : `${NAVER_API_BASE}/users/me/drive/files/${fileId}`
 
