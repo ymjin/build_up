@@ -101,7 +101,7 @@ export async function GET(request: Request) {
     // 3. 수파베이스 어드민 클라이언트 생성
     const supabaseAdmin = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      (process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)!,
       {
         auth: {
           autoRefreshToken: false,
