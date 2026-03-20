@@ -7,7 +7,7 @@ const resend = new Resend(process.env.NEXT_PUBLIC_RESEND_API_KEY || process.env.
 
 // 발신 이메일 주소 (도메인 인증 후 변경)
 // 테스트 시: onboarding@resend.dev (Resend 기본 테스트 주소)
-const FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? 'Build-Up <noreply@buildup.kr>'
+const FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? 'Build-Up <noreply@aira.kr>'
 
 // =============================================
 // 공통 HTML 레이아웃 (오렌지 테마)
