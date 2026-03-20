@@ -6,7 +6,7 @@ export async function GET(request: Request) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin
   const code = searchParams.get('code')
   const client_id = process.env.NEXT_PUBLIC_NAVER_WORKS_CLIENT_ID || process.env.NAVER_WORKS_CLIENT_ID
-  const client_secret = process.env.NAVER_WORKS_CLIENT_SECRET
+  const client_secret = process.env.NEXT_PUBLIC_NAVER_WORKS_CLIENT_SECRET || process.env.NAVER_WORKS_CLIENT_SECRET
 
   if (!code) {
     return NextResponse.redirect(`${appUrl}/auth/login?error=no_code`)
