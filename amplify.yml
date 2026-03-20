@@ -3,13 +3,13 @@ frontend:
   phases:
     preBuild:
       commands:
-        - cd app && npm ci
+        - (cd app && npm ci)
         - rm -rf app/.next
     build:
       commands:
-        - cd app && NODE_ENV=production npm run build
+        - (cd app && NODE_ENV=production npm run build)
         - ls -la app/.next/
-        - ls -la app/.next/standalone/ 2>/dev/null || echo "standalone folder NOT FOUND"
+        - ls -la app/.next/standalone/ 2>/dev/null || echo "standalone NOT FOUND"
         - mkdir -p .amplify-hosting/compute/default
         - mkdir -p .amplify-hosting/static/_next
         - cp -r app/.next/standalone/. .amplify-hosting/compute/default/
