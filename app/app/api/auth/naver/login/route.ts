@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 
 export async function GET(request: Request) {
-  const client_id = process.env.NAVER_WORKS_CLIENT_ID
+  const client_id = process.env.NEXT_PUBLIC_NAVER_WORKS_CLIENT_ID || process.env.NAVER_WORKS_CLIENT_ID
   const redirect_uri = `${process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin}/api/auth/naver/callback`
   const state = Math.random().toString(36).substring(7)
   
