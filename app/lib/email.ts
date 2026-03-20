@@ -3,7 +3,7 @@ import { Resend } from 'resend'
 // =============================================
 // Resend 클라이언트 초기화
 // =============================================
-const resend = new Resend(process.env.RESEND_API_KEY)
+const resend = new Resend(process.env.NEXT_PUBLIC_RESEND_API_KEY || process.env.RESEND_API_KEY)
 
 // 발신 이메일 주소 (도메인 인증 후 변경)
 // 테스트 시: onboarding@resend.dev (Resend 기본 테스트 주소)
